@@ -14,7 +14,6 @@
 
 package com.kdgregory.logging.testhelpers;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +27,9 @@ import org.slf4j.LoggerFactory;
 import com.amazonaws.services.logs.AWSLogs;
 import com.amazonaws.services.logs.model.*;
 
+import com.kdgregory.aws.utils.logs.CloudWatchLogsReader;
+import com.kdgregory.aws.utils.logs.CloudWatchLogsUtil;
+
 
 /**
  *  A collection of utility methods to support integration tests. This is an
@@ -39,8 +41,6 @@ public class CloudWatchTestHelper
 {
     private final static long WAIT_FOR_READY_TIMEOUT_MS     = 60000;
     private final static long WAIT_FOR_DELETED_TIMEOUT_MS   = 60000;
-
-    private final static int RETRIEVE_RETRY_COUNT           = 5;
 
     private Logger localLogger = LoggerFactory.getLogger(getClass());
 
@@ -99,48 +99,14 @@ public class CloudWatchTestHelper
      *  <p>
      *  To work around eventual consistency, you can pass in an expected message
      *  count, and the function will make several attempts to read that number of
-     *  messages, with a sleep in the middle. To read whatever's available, pass 0.
+     *  messages, with a sleep in the middle.
      */
     public List<OutputLogEvent> retrieveAllMessages(String logStreamName, int expectedMessageCount)
     throws Exception
     {
-        List<OutputLogEvent> result = new ArrayList<OutputLogEvent>();
-
-        localLogger.debug("retrieving messages from {}", logStreamName);
-
-        ensureLogStreamAvailable(logStreamName);
-
-        for (int retry = 0 ; retry < RETRIEVE_RETRY_COUNT ; retry++)
-        {
-            result.clear();
-
-            GetLogEventsRequest request = new GetLogEventsRequest()
-                                  .withLogGroupName(logGroupName)
-                                  .withLogStreamName(logStreamName)
-                                  .withStartFromHead(Boolean.TRUE);
-
-            // sequence tokens stop changing when we're at the end of the stream
-            String prevToken = "";
-            String nextToken = "";
-
-            do
-            {
-                prevToken = nextToken;
-                GetLogEventsResult response = client.getLogEvents(request);
-                result.addAll(response.getEvents());
-                nextToken = response.getNextForwardToken();
-                request.setNextToken(nextToken);
-                Thread.sleep(500);
-            } while (! prevToken.equals(nextToken));
-
-            if ((expectedMessageCount == 0) || (result.size() >= expectedMessageCount))
-                break;
-
-            Thread.sleep(2000);
-        }
-
-        localLogger.debug("retrieved {} messages from {}", result.size(), logStreamName);
-        return result;
+        CloudWatchLogsReader reader = new CloudWatchLogsReader(client, logGroupName, logStreamName)
+                                      .withRetrieveExitLogging(true);
+        return reader.retrieve(expectedMessageCount, 60000);
     }
 
 
@@ -172,31 +138,10 @@ public class CloudWatchTestHelper
      */
     public void deleteLogGroupIfExists()
     throws Exception
-    {
-        localLogger.debug("deleting log group {}", logGroupName);
-
-        try
-        {
-            client.deleteLogGroup(new DeleteLogGroupRequest().withLogGroupName(logGroupName));
-        }
-        catch (ResourceNotFoundException ignored)
-        {
-            // this gets thrown if we deleted a non-existent log group; that's OK
-            return;
-        }
-
-        long timeoutAt = System.currentTimeMillis() + WAIT_FOR_DELETED_TIMEOUT_MS;
-        while (System.currentTimeMillis() < timeoutAt)
-        {
-            DescribeLogGroupsRequest request = new DescribeLogGroupsRequest().withLogGroupNamePrefix(logGroupName);
-            DescribeLogGroupsResult response = client.describeLogGroups(request);
-            if ((response.getLogGroups() == null) || (response.getLogGroups().size() == 0))
-            {
-                return;
-            }
-            Thread.sleep(1000);
-        }
-        fail("log group\"" + logGroupName + "\" still exists after " + WAIT_FOR_DELETED_TIMEOUT_MS / 1000 + " seconds");
+    {        
+        CloudWatchLogsUtil.deleteLogGroup(client, logGroupName, WAIT_FOR_DELETED_TIMEOUT_MS);
+        assertNull("log group " + logGroupName + " still exists", 
+                   CloudWatchLogsUtil.describeLogGroup(client, logGroupName));
     }
 
 
@@ -206,17 +151,9 @@ public class CloudWatchTestHelper
     public void deleteLogStream(String logStreamName)
     throws Exception
     {
-        localLogger.debug("deleting log stream {}", logStreamName);
-
-        client.deleteLogStream(new DeleteLogStreamRequest().withLogGroupName(logGroupName).withLogStreamName(logStreamName));
-
-        boolean stillExists = true;
-        long timeoutAt = System.currentTimeMillis() + WAIT_FOR_DELETED_TIMEOUT_MS;
-        while (stillExists && (System.currentTimeMillis() < timeoutAt))
-        {
-            stillExists = isLogStreamAvailable(logStreamName);
-        }
-        assertFalse("stream was removed", stillExists);
+        CloudWatchLogsUtil.deleteLogStream(client, logGroupName, logStreamName, WAIT_FOR_DELETED_TIMEOUT_MS);
+        assertNull("log stream " +  logGroupName + "/" + logStreamName  + " still exists", 
+                   CloudWatchLogsUtil.describeLogStream(client, logGroupName, logStreamName));
     }
 
 
@@ -225,20 +162,6 @@ public class CloudWatchTestHelper
      */
     public boolean isLogStreamAvailable(String logStreamName)
     {
-        List<LogStream> streams = null;
-        try
-        {
-            DescribeLogStreamsRequest reqest = new DescribeLogStreamsRequest()
-                                               .withLogGroupName(logGroupName)
-                                               .withLogStreamNamePrefix(logStreamName);
-            DescribeLogStreamsResult response = client.describeLogStreams(reqest);
-            streams = response.getLogStreams();
-        }
-        catch (ResourceNotFoundException ignored)
-        {
-            // this indicates that the log group isn't available, so fall through
-        }
-
-        return ((streams != null) && (streams.size() > 0));
+        return CloudWatchLogsUtil.describeLogStream(client, logGroupName, logStreamName) != null;
     }
 }
