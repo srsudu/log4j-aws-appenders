@@ -22,7 +22,23 @@
             <groupId>com.kdgregory.logging</groupId>
             <artifactId>aws-shared</artifactId>
             <version>${project.version}</version>
-            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-logs</artifactId>
+            <version>${aws-sdk.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.kdgregory.aws</groupId>
+            <artifactId>aws-java-utils</artifactId>
+            <version>${aws-utils.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.kdgregory.aws</groupId>
+            <artifactId>aws-java-utils-testhelpers</artifactId>
+            <version>${aws-utils.version}</version>
         </dependency>
         <dependency>
             <groupId>com.kdgregory.logging</groupId>
@@ -30,57 +46,41 @@
             <classifier>tests</classifier>
             <type>test-jar</type>
             <version>${project.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.kdgregory.logging</groupId>
             <artifactId>aws-testhelpers</artifactId>
             <version>${project.version}</version>
-            <scope>test</scope>
         </dependency>
-
-        <dependency>
-            <groupId>com.amazonaws</groupId>
-            <artifactId>aws-java-sdk-logs</artifactId>
-            <version>${aws-sdk.version}</version>
-            <scope>test</scope>
-        </dependency>
-
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>log4j</groupId>
             <artifactId>log4j</artifactId>
             <version>${log4j.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>net.sf.kdgcommons</groupId>
             <artifactId>kdgcommons</artifactId>
             <version>${kdgcommons.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>net.sf.practicalxml</groupId>
             <artifactId>practicalxml</artifactId>
             <version>${practicalxml.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-log4j12</artifactId>
             <version>${slf4j.version}</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

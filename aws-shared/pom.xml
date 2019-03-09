@@ -44,6 +44,18 @@
         </dependency>
 
         <dependency>
+            <groupId>com.kdgregory.aws</groupId>
+            <artifactId>aws-java-utils</artifactId>
+            <version>${aws-utils.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.kdgregory.aws</groupId>
+            <artifactId>aws-java-utils-testhelpers</artifactId>
+            <version>${aws-utils.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>

@@ -60,6 +60,18 @@
         </dependency>
 
         <dependency>
+            <groupId>com.kdgregory.aws</groupId>
+            <artifactId>aws-java-utils</artifactId>
+            <version>${aws-utils.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.kdgregory.aws</groupId>
+            <artifactId>aws-java-utils-testhelpers</artifactId>
+            <version>${aws-utils.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.kdgregory.logging</groupId>
             <artifactId>aws-shared</artifactId>
             <classifier>tests</classifier>
