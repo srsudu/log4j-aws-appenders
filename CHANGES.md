@@ -1,5 +1,9 @@
 # Change History
 
+## 2.2.0 (unreleased)
+
+* Updated tests to use classes from [aws-java-utils](https://github.com/kdgregory/aws-java-utils).
+
 ## 2.2.0 (2019-02-10)
 
 * Add a shutdown hook to avoid losing queued messages when the main thread exits.
