@@ -1,5 +1,9 @@
 # Change History
 
+## 2.2.X (unreleased)
+
+* Updated tests to use classes from [aws-java-utils](https://github.com/kdgregory/aws-java-utils).
+
 ## 2.2.1 (2019-05-05)
 
 * CloudWatch appender allows setting retention period when creating log group.
