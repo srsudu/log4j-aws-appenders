@@ -69,7 +69,7 @@ public class TestDefaultClientFactory
     {
         try
         {
-            clientFromFactory = new MockCloudWatchClient().createClient();
+            clientFromFactory = new MockCloudWatchClient().getInstance();
             return clientFromFactory;
         }
         catch (Exception ex)
@@ -96,7 +96,7 @@ public class TestDefaultClientFactory
 
         public AWSLogs build()
         {
-            clientFromBuilder = new MockCloudWatchClient().createClient();
+            clientFromBuilder = new MockCloudWatchClient().getInstance();
             return clientFromBuilder;
         }
 

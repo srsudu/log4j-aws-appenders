@@ -47,24 +47,35 @@ import com.kdgregory.logging.testhelpers.cloudwatch.MockCloudWatchClient;
 public class TestCloudWatchLogWriter
 extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWatchWriterStatistics,AWSLogs>
 {
+    public final static String DEFAULT_GROUP_NAME = "argle";
+    public final static String DEFAULT_STREAM_NAME = "bargle";
+
 //----------------------------------------------------------------------------
 //  Support Code
 //----------------------------------------------------------------------------
 
-    /**
-     *  Rather than re-create each time, we initialize in setUp(), replace in
-     *  tests that need to do so.
-     */
     private MockCloudWatchClient mock = new MockCloudWatchClient();
 
 
     /**
-     *  Creates a writer using the current mock client, waiting for it to be initialized.
+     *  Creates the writer using a preconfigured mock.
      */
     private void createWriter()
     throws Exception
     {
         createWriter(mock.newWriterFactory());
+    }
+
+
+    /**
+     *  Configures the mock client with group and optional streams, then
+     *  creates the writer.
+     */
+    private void createWriter(String groupName, String... streamNames)
+    throws Exception
+    {
+        mock.withGroupAndStreams(groupName, streamNames);
+        createWriter();
     }
 
     // the following variable and function are used by testStaticClientFactory
@@ -73,8 +84,9 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
     public static AWSLogs createMockClient()
     {
-        staticFactoryMock = new MockCloudWatchClient();
-        return staticFactoryMock.createClient();
+        staticFactoryMock = (MockCloudWatchClient)new MockCloudWatchClient()
+                            .withGroupAndStreams(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
+        return staticFactoryMock.getInstance();
     }
 
 //----------------------------------------------------------------------------
@@ -88,6 +100,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         config = new CloudWatchWriterConfig(
             "argle",                // log group name
             "bargle",               // log stream name
+            DEFAULT_GROUP_NAME,     // log group name
+            DEFAULT_STREAM_NAME,    // log stream name
             null,                   // retention period
             100,                    // batch delay -- short enough to keep tests fast, long enough that we can write a lot of messages
             10000,                  // discard threshold
@@ -138,7 +152,7 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
     @Test
     public void testOperationWithExistingGroupAndStream() throws Exception
     {
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
 
         assertEquals("stats: actual log group name",            "argle",            stats.getActualLogGroupName());
         assertEquals("stats: actual log stream name",           "bargle",           stats.getActualLogStreamName());
@@ -149,13 +163,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // will call describeLogGroups when checking group existence
         // will call describeLogStreams when checking stream existence, as well as for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    2,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message one",      mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        2);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message one",      mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(1);
         assertEquals("statistics: last batch messages sent",    1,                  stats.getMessagesSentLastBatch());
@@ -166,21 +180,21 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         // will call describeLogStreams for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    3,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          2,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      2,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message (0)",          "message two",      mock.mostRecentEvents.get(0).getMessage());
-        assertEquals("putLogEvents: last message (1)",          "message three",    mock.mostRecentEvents.get(1).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        3);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
+        mock.assertInvocationCount("putLogEvents",              2);
+        assertEquals("putLogEvents: last call #/messages",      2,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message (0)",          "message two",      mock.getLastPutEvents().get(0).getMessage());
+        assertEquals("putLogEvents: last message (1)",          "message three",    mock.getLastPutEvents().get(1).getMessage());
 
         assertStatisticsTotalMessagesSent(3);
         assertEquals("statistics: last batch messages sent",    2,                  stats.getMessagesSentLastBatch());
 
         internalLogger.assertInternalDebugLog("log writer starting.*",
-                                              "using existing .* group: argle",
-                                              "using existing .* stream: bargle",
+                                              "using existing.*log group.*" + DEFAULT_GROUP_NAME,
+                                              "using existing.*log stream.*" + DEFAULT_STREAM_NAME,
                                               "log writer initialization complete.*");
         internalLogger.assertInternalErrorLog();
     }
@@ -191,7 +205,7 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
     {
         config.logStreamName = "zippy";
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME);
 
         assertEquals("stats: actual log group name",            "argle",            stats.getActualLogGroupName());
         assertEquals("stats: actual log stream name",           "zippy",            stats.getActualLogStreamName());
@@ -202,15 +216,15 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // will call describeLogGroups when checking group existence
         // will call describeLogStreams when checking stream existence, after creating stream, and for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    3,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       1,                  mock.createLogStreamInvocationCount);
-        assertEquals("createLogStream: group name",             "argle",            mock.createLogStreamGroupName);
-        assertEquals("createLogStream: stream name",            "zippy",            mock.createLogStreamStreamName);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message one",      mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        3);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           1);
+        assertEquals("createLogStream: group name",             "argle",            mock.getMostRecentCreateLogStreamRequest().getLogGroupName());
+        assertEquals("createLogStream: stream name",            "zippy",            mock.getMostRecentCreateLogStreamRequest().getLogStreamName());
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message one",      mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(1);
         assertEquals("statistics: last batch messages sent",    1,                  stats.getMessagesSentLastBatch());
@@ -221,20 +235,20 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         // will call describeLogStreams for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    4,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       1,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          2,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      2,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message (0)",          "message two",      mock.mostRecentEvents.get(0).getMessage());
-        assertEquals("putLogEvents: last message (1)",          "message three",    mock.mostRecentEvents.get(1).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        4);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           1);
+        mock.assertInvocationCount("putLogEvents",              2);
+        assertEquals("putLogEvents: last call #/messages",      2,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message (0)",          "message two",      mock.getLastPutEvents().get(0).getMessage());
+        assertEquals("putLogEvents: last message (1)",          "message three",    mock.getLastPutEvents().get(1).getMessage());
 
         assertStatisticsTotalMessagesSent(3);
         assertEquals("statistics: last batch messages sent",    2,                  stats.getMessagesSentLastBatch());
 
         internalLogger.assertInternalDebugLog("log writer starting.*",
-                                              "using existing .* group: argle",
+                                              "using existing.*log group.*" + DEFAULT_GROUP_NAME,
                                               "creating .* stream: zippy",
                                               "log writer initialization complete.*");
         internalLogger.assertInternalErrorLog();
@@ -258,16 +272,16 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // will call describeLogGroups when checking group existence, as well as after creating group
         // will call describeLogStreams when checking stream existence, after creating stream, and for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     2,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    3,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        1,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogGroup: group name",              "griffy",           mock.createLogGroupGroupName);
-        assertEquals("createLogStream: invocation count",       1,                  mock.createLogStreamInvocationCount);
-        assertEquals("createLogStream: group name",             "griffy",           mock.createLogStreamGroupName);
-        assertEquals("createLogStream: stream name",            "zippy",            mock.createLogStreamStreamName);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message one",      mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         2);
+        mock.assertInvocationCount("describeLogStreams",        3);
+        mock.assertInvocationCount("createLogGroup",            1);
+        assertEquals("createLogGroup: group name",              "griffy",           mock.getMostRecentCreateLogGroupRequest().getLogGroupName());
+        mock.assertInvocationCount("createLogStream",           1);
+        assertEquals("createLogStream: group name",             "griffy",           mock.getMostRecentCreateLogStreamRequest().getLogGroupName());
+        assertEquals("createLogStream: stream name",            "zippy",            mock.getMostRecentCreateLogStreamRequest().getLogStreamName());
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message one",      mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(1);
         assertEquals("statistics: last batch messages sent",    1,                  stats.getMessagesSentLastBatch());
@@ -278,14 +292,14 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         // will call describeLogStreams for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     2,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    4,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        1,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       1,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          2,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      2,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message (0)",          "message two",      mock.mostRecentEvents.get(0).getMessage());
-        assertEquals("putLogEvents: last message (1)",          "message three",    mock.mostRecentEvents.get(1).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         2);
+        mock.assertInvocationCount("describeLogStreams",        4);
+        mock.assertInvocationCount("createLogGroup",            1);
+        mock.assertInvocationCount("createLogStream",           1);
+        mock.assertInvocationCount("putLogEvents",              2);
+        assertEquals("putLogEvents: last call #/messages",      2,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message (0)",          "message two",      mock.getLastPutEvents().get(0).getMessage());
+        assertEquals("putLogEvents: last message (1)",          "message three",    mock.getLastPutEvents().get(1).getMessage());
 
         assertStatisticsTotalMessagesSent(3);
         assertEquals("statistics: last batch messages sent",    2,                  stats.getMessagesSentLastBatch());
@@ -370,27 +384,31 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
     public void testPaginatedDescribes() throws Exception
     {
         // these two names are at the end of the default list
-        config.logGroupName = "argle";
-        config.logStreamName = "fribble";
+        config.logGroupName = "fribble";
+        config.logStreamName = "frappe";
 
-        mock = new MockCloudWatchClient(MockCloudWatchClient.NAMES, 5, MockCloudWatchClient.NAMES, 5);
+        mock = (MockCloudWatchClient)new MockCloudWatchClient()
+                .withGroupAndStreams("foo", "bar", "baz")
+                .withGroupAndStreams("argle", "bargle", "wargle", "biff")
+                .withGroupAndStreams("fribble", "bibble", "bazzle", "frappe")
+                .withPageSize(2);
         createWriter();
 
-        assertEquals("stats: actual log group name",            "argle",            stats.getActualLogGroupName());
-        assertEquals("stats: actual log stream name",           "fribble",          stats.getActualLogStreamName());
+        assertEquals("stats: actual log group name",            "fribble",          stats.getActualLogGroupName());
+        assertEquals("stats: actual log stream name",           "frappe",           stats.getActualLogStreamName());
 
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message one"));
         mock.allowWriterThread();
 
         // this is an "existing group and stream" test, but with twice the describe calls
 
-        assertEquals("describeLogGroups: invocation count",     2,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    4,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message one",      mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         2);
+        mock.assertInvocationCount("describeLogStreams",        4);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message one",      mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(1);
     }
@@ -408,8 +426,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         assertStatisticsErrorMessage("invalid log group name: " + config.logGroupName + "$");
 
-        assertEquals("describeLogGroups: invocation count",     0,                      mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    0,                      mock.describeLogStreamsInvocationCount);
+        mock.assertInvocationCount("describeLogGroups",         0);
+        mock.assertInvocationCount("describeLogStreams",        0);
 
         internalLogger.assertInternalDebugLog("log writer starting.*");
         internalLogger.assertInternalErrorLog(".*invalid.*group.*");
@@ -428,8 +446,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         assertStatisticsErrorMessage("invalid log stream name: " + config.logStreamName + "$");
 
-        assertEquals("describeLogGroups: invocation count",     0,                      mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    0,                      mock.describeLogStreamsInvocationCount);
+        mock.assertInvocationCount("describeLogGroups",         0);
+        mock.assertInvocationCount("describeLogStreams",        0);
 
         internalLogger.assertInternalDebugLog("log writer starting.*");
         internalLogger.assertInternalErrorLog(".*invalid.*stream.*");
@@ -442,7 +460,7 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         mock = new MockCloudWatchClient()
         {
             @Override
-            protected DescribeLogGroupsResult describeLogGroups(DescribeLogGroupsRequest request)
+            public DescribeLogGroupsResult describeLogGroups(DescribeLogGroupsRequest request)
             {
                 throw new TestingException("not now, not ever");
             }
@@ -452,8 +470,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         // we don't need to write any messages; writer should fail to initialize
 
-        assertEquals("describeLogGroups: invocation count",             1,                          mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",            0,                          mock.describeLogStreamsInvocationCount);
+        mock.assertInvocationCount("describeLogGroups",                 1);
+        mock.assertInvocationCount("describeLogStreams",                0);
 
         assertEquals("message queue set to discard all",                0,                          messageQueue.getDiscardThreshold());
         assertEquals("message queue set to discard all",                DiscardAction.oldest,       messageQueue.getDiscardAction());
@@ -473,13 +491,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         mock = new MockCloudWatchClient()
         {
             @Override
-            protected PutLogEventsResult putLogEvents(PutLogEventsRequest request)
+            public PutLogEventsResult putLogEvents0(PutLogEventsRequest request)
             {
                 throw new TestingException("I don't wanna do the work");
             }
         };
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
 
         // we allow two trips to putLogEvents because (1) stats are updated before the main thread
         // restarts, and (2) we want to verify that the batch is re-processed
@@ -488,9 +506,9 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         mock.allowWriterThread();
         mock.allowWriterThread();
 
-        assertEquals("putLogEvents: invocation count",                  2,                      mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",              1,                      mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",                      "message one",          mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("putLogEvents",                      2);
+        assertEquals("putLogEvents: last call #/messages",              1,                      mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",                      "message one",          mock.getLastPutEvents().get(0).getMessage());
 
         // these statistics may be from the current batch or previous batch, depending on thread race, but should be same regardless
         assertEquals("statistics: last batch messages sent",            0,                      stats.getMessagesSentLastBatch());
@@ -502,8 +520,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         assertTrue("message queue still accepts messages",                                      messageQueue.getDiscardThreshold() > 0);
 
         internalLogger.assertInternalDebugLog("log writer starting.*",
-                                              "using existing .* group: argle",
-                                              "using existing .* stream: bargle",
+                                              "using existing .* group: " + DEFAULT_GROUP_NAME,
+                                              "using existing .* stream: " + DEFAULT_STREAM_NAME,
                                               "log writer initialization complete.*");
         internalLogger.assertInternalErrorLog("failed to send.*", "failed to send.*");
         internalLogger.assertInternalErrorLogExceptionTypes(TestingException.class, TestingException.class);
@@ -516,16 +534,16 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         mock = new MockCloudWatchClient()
         {
             @Override
-            protected PutLogEventsResult putLogEvents(PutLogEventsRequest request)
+            public PutLogEventsResult putLogEvents0(PutLogEventsRequest request)
             {
-                if (putLogEventsInvocationCount < 3)
+                if (mock.getInvocationCount("putLogEvents") < 3)
                     throw new InvalidSequenceTokenException("race condition!");
                 else
-                    return super.putLogEvents(request);
+                    return super.putLogEvents0(request);
             }
         };
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
 
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message one"));
 
@@ -534,9 +552,9 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         mock.allowWriterThread();
         mock.allowWriterThread();
 
-        assertEquals("putLogEvents: invocation count",                  3,                      mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",              1,                      mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",                      "message one",          mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("putLogEvents",                      3);
+        assertEquals("putLogEvents: last call #/messages",              1,                      mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",                      "message one",          mock.getLastPutEvents().get(0).getMessage());
 
         // no message should be recorded in stats or reported to logs
         // and since the retry happens in the internal append, there won't be a requeue stat
@@ -548,8 +566,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         internalLogger.assertInternalDebugLog(
             "log writer starting.*",
-            "using existing.*log group.*",
-            "using existing.*log stream.*",
+            "using existing.*log group.*" + DEFAULT_GROUP_NAME,
+            "using existing.*log stream.*" + DEFAULT_STREAM_NAME,
             "log writer initialization complete.*");
         internalLogger.assertInternalErrorLog();
         internalLogger.assertInternalErrorLogExceptionTypes();
@@ -562,13 +580,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         mock = new MockCloudWatchClient()
         {
             @Override
-            protected PutLogEventsResult putLogEvents(PutLogEventsRequest request)
+            public PutLogEventsResult putLogEvents0(PutLogEventsRequest request)
             {
                 throw new InvalidSequenceTokenException("I'll never complete!");
             }
         };
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
 
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message one"));
 
@@ -576,9 +594,9 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         for (int ii = 0 ; ii < 6 ; ii++)
             mock.allowWriterThread();
 
-        assertEquals("putLogEvents: invocation count",                  6,                      mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",              1,                      mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",                      "message one",          mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("putLogEvents",                      6);
+        assertEquals("putLogEvents: last call #/messages",              1,                      mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",                      "message one",          mock.getLastPutEvents().get(0).getMessage());
 
         assertRegex("statistics: error message",                        ".*repeated InvalidSequenceTokenException.*",
                                                                         stats.getLastErrorMessage());
@@ -592,8 +610,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         internalLogger.assertInternalDebugLog(
             "log writer starting.*",
-            "using existing.*log group.*",
-            "using existing.*log stream.*",
+            "using existing.*log group.*" + DEFAULT_GROUP_NAME,
+            "using existing.*log stream.*" + DEFAULT_STREAM_NAME,
             "log writer initialization complete.*");
         internalLogger.assertInternalErrorLog(".*InvalidSequenceTokenException.*");
         internalLogger.assertInternalErrorLogExceptionTypes(new Class<?>[] { null });   // we record the message, not the exception
@@ -610,24 +628,24 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         mock = new MockCloudWatchClient()
         {
             @Override
-            protected PutLogEventsResult putLogEvents(PutLogEventsRequest request)
+            public PutLogEventsResult putLogEvents0(PutLogEventsRequest request)
             {
-                if (putLogEventsInvocationCount == 1)
+                if (mock.getInvocationCount("putLogEvents") == 1)
                     throw new DataAlreadyAcceptedException("blah blah blah");
                 else
-                    return super.putLogEvents(request);
+                    return super.putLogEvents0(request);
             }
         };
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
 
         // this first message should be rejected
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message one"));
         mock.allowWriterThread();
 
-        assertEquals("putLogEvents: invocation count",                  1,                      mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",              1,                      mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",                      "message one",          mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("putLogEvents",                      1);
+        assertEquals("putLogEvents: last call #/messages",              1,                      mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",                      "message one",          mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsErrorMessage("received DataAlreadyAcceptedException.*");
         assertStatisticsException(DataAlreadyAcceptedException.class,   "blah blah blah.*");
@@ -647,9 +665,9 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message two"));
         mock.allowWriterThread();
 
-        assertEquals("putLogEvents: invocation count",                  2,                      mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",              1,                      mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",                      "message two",          mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("putLogEvents",                      2);
+        assertEquals("putLogEvents: last call #/messages",              1,                      mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",                      "message two",          mock.getLastPutEvents().get(0).getMessage());
 
         // again, this is off by 1
         assertStatisticsTotalMessagesSent(2);
@@ -667,9 +685,7 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
     @Test
     public void testRecoveryFromLogStreamDeletion() throws Exception
     {
-        // this starts off with the default (existing) group and stream
-
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
 
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message one"));
         mock.allowWriterThread();
@@ -678,19 +694,21 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // will call describeLogStreams when checking stream existence, as well as for each putLogEvents
         // stream exists, so no creation methods called
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    2,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message one",      mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        2);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message one",      mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(1);
         assertEquals("statistics: last batch messages sent",        1,              stats.getMessagesSentLastBatch());
         assertEquals("statistics: last batch messages requeued",    0,              stats.getMessagesRequeuedLastBatch());
 
-        mock.logStreamNames.clear();
+        mock.deleteLogStream(new DeleteLogStreamRequest()
+                             .withLogGroupName(DEFAULT_GROUP_NAME)
+                             .withLogStreamName(DEFAULT_STREAM_NAME));
 
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message two"));
         mock.allowWriterThread();
@@ -700,13 +718,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // followed by another stream describe before the putLogEvents
         // ... but we'll never see the actual failure state
 
-        assertEquals("describeLogGroups: invocation count",     2,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    6,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       1,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          2,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message two",      mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         2);
+        mock.assertInvocationCount("describeLogStreams",        6);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           1);
+        mock.assertInvocationCount("putLogEvents",              2);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message two",      mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(2);
         assertEquals("statistics: last batch messages sent",        1,              stats.getMessagesSentLastBatch());
@@ -729,13 +747,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         // this should be fine: another describeStream, followed by a putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     2,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    7,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       1,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          3,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message three",    mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         2);
+        mock.assertInvocationCount("describeLogStreams",        7);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           1);
+        mock.assertInvocationCount("putLogEvents",              3);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message three",    mock.getLastPutEvents().get(0).getMessage());
     }
 
 
@@ -770,9 +788,9 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         mock.allowWriterThread();
 
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              bigMessage,         mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              bigMessage,         mock.getLastPutEvents().get(0).getMessage());
     }
 
 
@@ -883,7 +901,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         final String testMessage = "test";    // this won't trigger batching based on size
         final int numMessages = 15000;
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
+
         for (int ii = 0 ; ii < numMessages ; ii++)
         {
             writer.addMessage(new LogMessage(System.currentTimeMillis(), testMessage));
@@ -896,13 +915,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // will call describeLogGroups when checking group existence
         // will call describeLogStreams when checking stream existence, as well as for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    2,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      10000,              mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              testMessage,        mock.mostRecentEvents.get(9999).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        2);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      10000,              mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              testMessage,        mock.getLastPutEvents().get(9999).getMessage());
 
         // second batch should get remaining 5,000
 
@@ -910,13 +929,12 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         // one more call to describeLogStreams, to get sequence token
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    3,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          2,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      5000,               mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              testMessage,        mock.mostRecentEvents.get(4999).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        3);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("putLogEvents",              2);
+        assertEquals("putLogEvents: last call #/messages",      5000,               mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              testMessage,        mock.getLastPutEvents().get(4999).getMessage());
 
         assertStatisticsTotalMessagesSent(numMessages);
 
@@ -941,7 +959,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         final String testMessage = StringUtil.randomAlphaString(1024, 1024);
         final int numMessages = 1500;
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
+
         for (int ii = 0 ; ii < numMessages ; ii++)
         {
             writer.addMessage(new LogMessage(System.currentTimeMillis(), testMessage));
@@ -954,13 +973,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // will call describeLogGroups when checking group existence
         // will call describeLogStreams when checking stream existence, as well as for each putLogEvents
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    2,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      998,               mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              testMessage,        mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        2);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      998,                mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              testMessage,        mock.getLastPutEvents().get(0).getMessage());
 
         // second batch should get remaining records
 
@@ -968,13 +987,13 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         // one more call to describeLogStreams, to get sequence token
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    3,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
-        assertEquals("putLogEvents: invocation count",          2,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      502,              mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              testMessage,        mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        3);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
+        mock.assertInvocationCount("putLogEvents",              2);
+        assertEquals("putLogEvents: last call #/messages",      502,                mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              testMessage,        mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(numMessages);
 
@@ -990,27 +1009,27 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
     public void testStaticClientFactory() throws Exception
     {
         config.clientFactoryMethod = this.getClass().getName() + ".createMockClient";
-        config.logGroupName = "argle";
-        config.logStreamName = "bargle";
 
         createWriter(new CloudWatchWriterFactory());
 
         assertNotNull("factory called (local flag)",                                            staticFactoryMock);
 
-        assertEquals("describeLogGroups: invocation count",     1,                              staticFactoryMock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    1,                              staticFactoryMock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                              staticFactoryMock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                              staticFactoryMock.createLogStreamInvocationCount);
+        mock = staticFactoryMock;
+
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        1);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
 
         assertNull("stats: no initialization error",                                            stats.getLastError());
         assertNull("stats: no initialization message",                                          stats.getLastErrorMessage());
-        assertEquals("stats: actual log group name",            "argle",                        stats.getActualLogGroupName());
-        assertEquals("stats: actual log stream name",           "bargle",                       stats.getActualLogStreamName());
+        assertEquals("stats: actual log group name",            DEFAULT_GROUP_NAME,             stats.getActualLogGroupName());
+        assertEquals("stats: actual log stream name",           DEFAULT_STREAM_NAME,            stats.getActualLogStreamName());
 
         internalLogger.assertInternalDebugLog("log writer starting.*",
                                               "creating client via factory.*" + config.clientFactoryMethod,
-                                              "using existing .* group: argle",
-                                              "using existing .* stream: bargle",
+                                              "using existing .* group: " + DEFAULT_GROUP_NAME,
+                                              "using existing .* stream: " + DEFAULT_STREAM_NAME,
                                               "log writer initialization complete.*");
         internalLogger.assertInternalErrorLog();
     }
@@ -1025,7 +1044,7 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // it actually tests functionality in AbstractAppender, but I've replicated for all concrete
         // subclasses simply because it's a key piece of functionality
 
-        createWriter();
+        createWriter(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
 
         assertEquals("after creation, shutdown time should be infinite", Long.MAX_VALUE, getShutdownTime());
 
@@ -1041,8 +1060,8 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // the batch should still be processed
         mock.allowWriterThread();
 
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
 
         // another call to stop should be ignored -- sleep to ensure times would be different
         Thread.sleep(100);
@@ -1051,7 +1070,7 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
 
         joinWriterThread();
 
-        assertEquals("shutdown: invocation count",              1,                  mock.shutdownInvocationCount);
+        mock.assertInvocationCount("shutdown", 1);
 
         internalLogger.assertInternalDebugLog(
             "log writer starting.*",
@@ -1072,6 +1091,9 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         // we just have one thread, so don't want any locks getting in the way
         mock.disableThreadSynchronization();
 
+        // since we're not using createWriter(), we need to configure mock groups/streams
+        mock.withGroupAndStreams(DEFAULT_GROUP_NAME, DEFAULT_STREAM_NAME);
+
         // the createWriter() method spins up a background thread, which we don't want
         writer = (CloudWatchLogWriter)mock.newWriterFactory().newLogWriter(config, stats, internalLogger);
         messageQueue = ClassUtil.getFieldValue(writer, "messageQueue", MessageQueue.class);
@@ -1085,30 +1107,30 @@ extends AbstractLogWriterTest<CloudWatchLogWriter,CloudWatchWriterConfig,CloudWa
         assertTrue("writer has been initialized",               ClassUtil.getFieldValue(writer, "initializationComplete", Boolean.class).booleanValue());
         assertNull("no dispatch thread",                        ClassUtil.getFieldValue(writer, "dispatchThread", Thread.class));
 
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    1,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("createLogGroup: invocation count",        0,                  mock.createLogGroupInvocationCount);
-        assertEquals("createLogStream: invocation count",       0,                  mock.createLogStreamInvocationCount);
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        1);
+        mock.assertInvocationCount("createLogGroup",            0);
+        mock.assertInvocationCount("createLogStream",           0);
 
         writer.addMessage(new LogMessage(System.currentTimeMillis(), "message one"));
 
         assertEquals("message is waiting in queue",             1,                  messageQueue.queueSize());
-        assertEquals("putLogEvents: invocation count",          0,                  mock.putLogEventsInvocationCount);
+        mock.assertInvocationCount("putLogEvents",              0);
 
         writer.processBatch(System.currentTimeMillis());
 
         assertEquals("no longer in queue",                      0,                  messageQueue.queueSize());
-        assertEquals("describeLogGroups: invocation count",     1,                  mock.describeLogGroupsInvocationCount);
-        assertEquals("describeLogStreams: invocation count",    2,                  mock.describeLogStreamsInvocationCount);
-        assertEquals("putLogEvents: invocation count",          1,                  mock.putLogEventsInvocationCount);
-        assertEquals("putLogEvents: last call #/messages",      1,                  mock.mostRecentEvents.size());
-        assertEquals("putLogEvents: last message",              "message one",      mock.mostRecentEvents.get(0).getMessage());
+        mock.assertInvocationCount("describeLogGroups",         1);
+        mock.assertInvocationCount("describeLogStreams",        2);
+        mock.assertInvocationCount("putLogEvents",              1);
+        assertEquals("putLogEvents: last call #/messages",      1,                  mock.getLastPutEvents().size());
+        assertEquals("putLogEvents: last message",              "message one",      mock.getLastPutEvents().get(0).getMessage());
 
         assertStatisticsTotalMessagesSent(1);
 
-        assertEquals("shutdown not called before cleanup",      0,                  mock.shutdownInvocationCount);
+        mock.assertInvocationCount("before writer.cleanup()", "shutdown", 0);
         writer.cleanup();
-        assertEquals("shutdown called after cleanup",           1,                  mock.shutdownInvocationCount);
+        mock.assertInvocationCount("after writer.cleanup()",  "shutdown", 1);
 
         // the "starting" and "initialization complete" messages are emitted in run(), so not present here
         internalLogger.assertInternalDebugLog("using existing .* group: argle",
